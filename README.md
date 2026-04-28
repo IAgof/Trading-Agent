@@ -71,4 +71,4 @@ Las herramientas pueden detectar e instalar la skill automáticamente leyendo el
 
 ## Licencia
 
-Libre uso bajo los términos de la licencia [MIT](LICENSE).
+Libre uso bajo los términos de la licencia [Apache 2.0](LICENSE).
