@@ -1,0 +1,290 @@
+---
+name: social-intelligence-agent
+description: >
+  Social Intelligence Agent (SIA) for the AI Agent Economy Trader. Filters
+  noise and detects insider accumulation vs retail shills across X and Farcaster.
+  Computes authority-weighted narrative intensity with time decay and platform
+  divergence signals. Writes directly to Supabase token_signals table. Trigger
+  when user asks to: run social intelligence, update SIA signals, scan narrative
+  for AI tokens, check Farcaster vs X divergence, update sentiment scores, run
+  SIA, or any combination of "SIA", "social signals", "narrative intensity",
+  "platform divergence", "Farcaster", "authority score", or "insider sentiment".
+---
+
+# Social Intelligence Agent (SIA) v2.0
+
+Background agent that separates insider accumulation from retail noise across
+X and Farcaster. Runs on a 1-hour cadence inside the Trader Sentinel cycle.
+Writes all output to Supabase `token_signals` table (sia_* columns).
+
+---
+
+## Core Concepts
+
+### Why Two Platforms
+
+X (Twitter) has high volume but low signal-to-noise: retail, bots, KOL pumps,
+and sponsored content dominate. Farcaster is smaller, more technical, and
+populated by founders, developers, and early protocol participants. The
+divergence between the two platforms is the alpha:
+
+| Farcaster | X    | Signal | Interpretation |
+|-----------|------|--------|----------------|
+| High      | Low  | ACCUMULATION | Insiders active before retail notices |
+| High      | High | PEAK | Narrative at maximum — watch for reversal |
+| Low       | High | FOMO_RISK | Retail FOMO / KOL dump risk |
+| Low       | Low  | ZOMBIE | No activity — token dead or dormant |
+
+### Authority Tiers
+
+| Tier | Authority Score | Examples |
+|------|----------------|----------|
+| 0 — Founders / Core Devs | 10.0 | Protocol founders, core contributors, official accounts |
+| 1 — OGs / Early Backers | 5.0 | Known early investors, respected protocol builders, technical OGs |
+| 2 — Verified Community | 2.0 | Accounts followed by Tier 0/1, active for >1 year, >1K followers |
+| 3 — Retail | 1.0 | All others passing the minimum filter |
+| FILTERED | 0 | < 100 followers OR bot-score > 0.7 OR account age < 30 days |
+
+**Authority multiplier x10**: accounts followed by Virtuals, Bankr, Bittensor,
+or Fetch.ai official accounts get their base score multiplied by 10 for that
+token's signals. Following is a proxy for protocol-level endorsement.
+
+---
+
+## Narrative Intensity Formula
+
+```
+Narrative_Intensity(token) =
+  Σ [ Sentiment_i * Authority_i * TimeDecay_i ]
+  ─────────────────────────────────────────────
+        log(TotalAuthorityWeight + 1)
+
+where:
+  Sentiment_i   = score of post i: -1.0 (FUD) to 1.0 (Bullish)
+  Authority_i   = tier score of account i (0, 1, 2, 5, or 10)
+  TimeDecay_i   = e^(-λ * hours_since_post), λ = 0.12 (half-life ~6h)
+  TotalAuthorityWeight = Σ Authority_i (all posts in window)
+```
+
+**Interpretation**:
+- > 3.0: Very high intensity (strong narrative)
+- 1.0–3.0: Moderate intensity
+- 0.0–1.0: Low intensity
+- < 0.0: Net negative / FUD dominant
+
+**Collection window**: last 24 hours per platform per token.
+
+---
+
+## Platform Score Computation
+
+For each token, compute separately for X and Farcaster:
+
+```
+platform_score = Σ(Sentiment_i * Authority_i * TimeDecay_i)
+                 normalized to [-1.0, 1.0]
+```
+
+Then classify platform_divergence:
+
+```
+HIGH threshold: platform_score > 0.40
+LOW threshold:  platform_score < 0.15
+
+IF farcaster_score > HIGH AND x_score < LOW:
+  → platform_divergence = "ACCUMULATION"
+  → sia_divergence_bonus = +0.15
+
+IF farcaster_score > HIGH AND x_score > HIGH:
+  → platform_divergence = "PEAK"
+  → sia_divergence_bonus = +0.05
+  → (narrative at maximum — flag for reversal watch)
+
+IF x_score > HIGH AND farcaster_score < LOW:
+  → platform_divergence = "FOMO_RISK"
+  → sia_divergence_bonus = -0.10
+
+IF farcaster_score < LOW AND x_score < LOW:
+  → platform_divergence = "ZOMBIE"
+  → sia_divergence_bonus = -0.20
+  → (flag token for zombie check in audit)
+
+ELSE:
+  → platform_divergence = "MIXED"
+  → sia_divergence_bonus = 0.0
+```
+
+---
+
+## Filtering Rules
+
+**Hard filters** (applied before any scoring):
+- Skip accounts with < 100 followers
+- Skip accounts with bot_score > 0.7 (if detectable via API)
+- Skip accounts created < 30 days ago
+- Skip posts that are retweets/reposts of already-counted content (dedup by content hash)
+
+**Spam detection**:
+- If > 3 posts from same account about same token in < 2h: count only the first, flag as spam
+- If post contains referral links or "$TOKEN to $X" price predictions: reduce sentiment weight by 0.50
+
+**Context extraction for sentiment**:
+- Bullish signals: "accumulating", "building", "shipped", "milestone", "partnership",
+  "integration", "subnet launch", "agent deployed", "X402 live"
+- Bearish signals: "exit", "dump", "rugpull", "dead", "abandoned", "exploit", "hack",
+  "team gone", "no activity"
+- Neutral: price speculation, memes without context, generic hype
+
+---
+
+## Workflow
+
+### Step 0 — Cadence Check
+SIA runs inside the Trader Sentinel (1h). If called independently, check that
+last run was > 55 minutes ago — abort if not.
+
+### Step 1 — Load Active Universe
+Query Supabase:
+```sql
+SELECT token FROM universe WHERE status = 'ACTIVE'
+UNION
+SELECT token FROM universe WHERE status IN ('WATCH_ADD', 'CANDIDATE')
+```
+SIA runs on the full known universe, not just active tokens — candidate tokens
+may be identified as interesting through social signals before they hit composite
+thresholds.
+
+### Step 2 — Collect Posts (per token)
+
+For each token:
+1. Fetch last 24h posts mentioning token on X (via social API tool).
+2. Fetch last 24h posts mentioning token on Farcaster (via social API tool).
+3. For each post: identify account tier, compute sentiment score, apply time decay.
+4. Apply filtering rules. Discard filtered posts.
+5. Record top 3 authority accounts by weighted score in `sia_top_accounts`.
+
+If social API call fails for a platform:
+→ Set `data_available = false` for that platform.
+→ Compute single-platform score if one platform available.
+→ Set `platform_divergence = null` if both fail (cannot compute divergence).
+→ Log to Supabase `system_logs` with `log_type = 'SIA_PARTIAL_DATA'`.
+
+### Step 3 — Compute Scores
+
+For each token:
+
+```
+sia_farcaster_score = platform_score(Farcaster)   [-1.0, 1.0]
+sia_x_score         = platform_score(X)           [-1.0, 1.0]
+sia_narrative_intensity = Narrative_Intensity()   [formula above]
+sia_platform_divergence = classify()
+sia_divergence_bonus    = bonus()
+
+sia_authority_score = mean(Authority_i) of top-10 posts by weighted score
+sia_mention_count_24h = total posts counted (after filtering) across both platforms
+
+sia_sentiment = (sia_farcaster_score * 0.55) + (sia_x_score * 0.45)
+```
+
+Farcaster weighted 55% because of higher signal quality per the platform thesis.
+
+### Step 4 — Write to Supabase
+
+For each token, UPSERT to `token_signals`:
+
+```sql
+INSERT INTO token_signals (
+  token,
+  sia_sentiment, sia_narrative_intensity,
+  sia_platform_divergence, sia_divergence_bonus,
+  sia_authority_score, sia_farcaster_score, sia_x_score,
+  sia_mention_count_24h, sia_top_accounts,
+  sia_updated_at, data_available
+) VALUES (...)
+ON CONFLICT (token) DO UPDATE SET
+  sia_sentiment = EXCLUDED.sia_sentiment,
+  sia_narrative_intensity = EXCLUDED.sia_narrative_intensity,
+  sia_platform_divergence = EXCLUDED.sia_platform_divergence,
+  sia_divergence_bonus = EXCLUDED.sia_divergence_bonus,
+  sia_authority_score = EXCLUDED.sia_authority_score,
+  sia_farcaster_score = EXCLUDED.sia_farcaster_score,
+  sia_x_score = EXCLUDED.sia_x_score,
+  sia_mention_count_24h = EXCLUDED.sia_mention_count_24h,
+  sia_top_accounts = EXCLUDED.sia_top_accounts,
+  sia_updated_at = NOW(),
+  data_available = EXCLUDED.data_available;
+```
+
+### Step 5 — Zombie Flag
+
+After writing all signals:
+
+```sql
+SELECT token FROM token_signals
+WHERE sia_platform_divergence = 'ZOMBIE'
+  AND sia_updated_at > NOW() - INTERVAL '2 hours';
+```
+
+For each zombie token, check if it appears in `universe` with `status = 'ACTIVE'`.
+If yes: write to `system_logs`:
+```json
+{
+  "log_type": "NARRATIVE_HITS",
+  "token": "TOKEN",
+  "payload": { "alert": "ZOMBIE_DETECTED", "source": "SIA" }
+}
+```
+The Audit Layer picks this up for zombie eviction logic.
+
+### Step 6 — Candidate Discovery
+
+Tokens NOT in universe that appear in social data with:
+- sia_narrative_intensity > 2.0
+- sia_platform_divergence = "ACCUMULATION"
+- sia_authority_score >= 2.0 (at least some non-retail signal)
+
+→ UPSERT to `universe` with `status = 'CANDIDATE'` and `watch_bucket_tentative`
+  based on keyword matching (Trader Audit Layer will evaluate further).
+
+---
+
+## SIA Signal Staleness
+
+The Trader hot path checks `sia_updated_at` before using SIA signals:
+
+```
+IF NOW() - sia_updated_at > 2h:
+  → sia_signals treated as STALE
+  → sia_divergence_bonus = 0.0 (neutral, no bonus/penalty)
+  → composite computed without SIA weight boost
+  → log: partial_data = true
+```
+
+Staleness threshold is 2h because SIA runs every 1h — anything older than 2h
+means at least one full cycle was missed.
+
+---
+
+## Output Reference (what Trader reads)
+
+| Column | Used by Trader for |
+|--------|-------------------|
+| sia_sentiment | Signal 1 (Social) in composite — replaces raw social score |
+| sia_narrative_intensity | Narrative momentum signal (Signal 3 partial) |
+| sia_platform_divergence | Platform divergence classification |
+| sia_divergence_bonus | Added to composite score |
+| sia_mention_count_24h | Mention volume gate (< 50 → penalize) |
+| sia_top_accounts | Displayed in status output |
+| sia_updated_at | Staleness check |
+| data_available | partial_data flag on trade entry |
+
+---
+
+## Commands
+
+- `run social intelligence agent` — Full SIA cycle (all tokens)
+- `run SIA for TOKEN` — Single token signal update
+- `show SIA signals` — Current sia_* values for all active tokens
+- `show platform divergence` — Divergence classification for all tokens
+- `show zombie candidates` — Tokens flagged as ZOMBIE by SIA
+- `show SIA top accounts TOKEN` — Authority accounts driving signal for TOKEN
