@@ -1,73 +1,69 @@
 # Trading-Agent
 
-**Trading-Agent** es un repositorio que implementa un agente automático de trading para mercados financieros. El agente analiza datos de mercado en tiempo real, toma decisiones de compra y venta según estrategias definidas, y permite fácilmente experimentar, adaptar o ampliar la lógica de inversión. Es ideal para aprender, experimentar o construir soluciones de trading automatizado.
+**Trading-Agent** es un repositorio que define una arquitectura de agente automático de trading para mercados financieros. Actualmente el proyecto está orientado a **documentación de estrategia y operación** (no incluye todavía implementación ejecutable completa del bot), lo cual lo hace útil para diseño, auditoría y evolución por etapas.
 
-## ¿Qué hace?
+## Estado actual del repositorio
 
-- Analiza datos de mercado financiero en tiempo real o históricos.
-- Toma decisiones de trading (comprar, vender, mantener) usando reglas programadas o inteligencia artificial.
-- Permite configurar estrategias y probarlas fácilmente.
-- Fácil de extender: puedes agregar tus propias estrategias, indicadores o integraciones.
-- Puede conectarse a diferentes plataformas de trading/exchanges* (ver documentación y adaptadores compatibles).
+- ✅ Documentación estratégica extensa (`ai-agent-economy-trader.MD`, `siaMD`).
+- ⚠️ No hay implementación Python funcional del `agent.py` dentro del repositorio actual.
+- ⚠️ No existe `requirements.txt` en la raíz (la instalación rápida previa asumía ese archivo).
 
-> * El uso real con dinero requiere precaución y supervisión. Es responsabilidad del usuario.
+> Recomendación: tratar este repo hoy como **spec/blueprint** y no como ejecutable listo para producción.
 
-## Instalación rápida
+## Mejoras aplicadas en esta revisión
 
-1. Clona este repositorio:
-   ```bash
-   git clone https://github.com/IAgof/Trading-Agent.git
-   cd Trading-Agent
-   ```
+1. **Corrección de expectativas**: se aclara el estado real del proyecto para evitar instrucciones de uso que fallen.
+2. **Roadmap técnico priorizado**: se propone una ruta de implementación incremental.
+3. **Checklist de calidad**: se añade un baseline de seguridad/operación antes de operar con fondos reales.
 
-2. Instala dependencias (requiere `Python 3.8+`):
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Roadmap sugerido (prioridad alta → baja)
 
-3. Ejecuta el agente con la configuración de ejemplo:
-   ```bash
-   python agent.py
-   ```
+### Fase 1 — Base ejecutable mínima
 
-Consulta la documentación interna/código para más opciones de configuración y personalización.
+- Crear estructura Python:
+  - `agent.py` (entrypoint)
+  - `trading_agent/config.py`
+  - `trading_agent/data_feed.py`
+  - `trading_agent/strategy.py`
+  - `trading_agent/execution.py`
+  - `trading_agent/risk.py`
+- Añadir `requirements.txt` + `.env.example`.
+- Definir modo `paper/simulation` por defecto.
 
----
+### Fase 2 — Persistencia y observabilidad
 
-## Instalación automática (para agentes y frameworks)
+- Integrar Supabase como fuente única de verdad (siguiendo el diseño ya documentado).
+- Estandarizar logs estructurados (`json`) con niveles (`INFO/WARN/ERROR`).
+- Añadir métricas mínimas: PnL, drawdown, win-rate, exposición por token.
 
-Si eres un framework, agente de IA o plataforma automatizada, puedes instalar esta skill automáticamente leyendo el siguiente bloque:
+### Fase 3 — Testing y seguridad operativa
 
-```yaml name=.skill-meta.yaml
-skill:
-  name: "Trading-Agent"
-  description: "Agente de trading automatizado para análisis y ejecución de operaciones sobre datos de mercado."
-  repo_url: "https://github.com/IAgof/Trading-Agent"
-  entrypoint: "agent.py"
-  language: "python"
-  requirements: "requirements.txt"
-  install:
-    - "git clone https://github.com/IAgof/Trading-Agent.git"
-    - "pip install -r requirements.txt"
-    - "# Lanza con: python agent.py o consultar instrucciones personalizadas"
-  author: "IAgof"
-  compatible_with:
-    - langchain
-    - openai-gpt
-    - openagents
-    - generic-bots
-```
+- Pruebas unitarias para scoring, thresholds, circuit breakers y DRR.
+- Pruebas de integración en modo simulado.
+- Reglas de seguridad:
+  - límites por posición,
+  - límites por día,
+  - kill switch manual,
+  - validación de llaves/API por entorno.
 
-Las herramientas pueden detectar e instalar la skill automáticamente leyendo el bloque `.skill-meta.yaml`.
+### Fase 4 — Entorno de producción
 
----
+- Pipeline CI (lint + tests + type-check).
+- Backtesting reproducible con datasets versionados.
+- Deploy con scheduler y alertas (fallos de conexión, DRR activado, CB activo).
 
-## Recursos útiles
+## Checklist mínimo antes de operar con dinero real
 
-- [Documentación y ejemplos](docs/)
-- [Issues y soporte](https://github.com/IAgof/Trading-Agent/issues)
+- [ ] Estrategia validada en backtest y forward test.
+- [ ] Circuit breakers probados con escenarios extremos.
+- [ ] Gestión de riesgo configurada y revisada.
+- [ ] Modo simulación ejecutado de forma estable por varios ciclos.
+- [ ] Monitoreo y alertas operativos 24/7.
 
----
+## Estructura documental actual
+
+- `ai-agent-economy-trader.MD`: arquitectura principal del trader, capas y reglas.
+- `siaMD`: especificación del Social Intelligence Agent (SIA).
 
 ## Licencia
 
