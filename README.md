@@ -5,6 +5,7 @@
 ## Estado actual del repositorio
 
 - ✅ Documentación estratégica extensa (`ai-agent-economy-trader.MD`, `siaMD`).
+- ✅ Definición del esquema de base de datos completada como parte del diseño técnico del sistema.
 - ⚠️ No hay implementación Python funcional del `agent.py` dentro del repositorio actual.
 - ⚠️ No existe `requirements.txt` en la raíz (la instalación rápida previa asumía ese archivo).
 
