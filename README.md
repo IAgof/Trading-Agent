@@ -1,71 +1,97 @@
 # Trading-Agent
 
-**Trading-Agent** es un repositorio que define una arquitectura de agente automático de trading para mercados financieros. Actualmente el proyecto está orientado a **documentación de estrategia y operación** (no incluye todavía implementación ejecutable completa del bot), lo cual lo hace útil para diseño, auditoría y evolución por etapas.
+**Trading-Agent** ahora incluye un MVP ejecutable del **Normies Intelligence Agent** descrito en la documentación del repositorio. El agente escanea NFTs Normies, normaliza traits/señales de Canvas, calcula un `composite_score`, persiste resultados localmente en SQLite y permite listar o explicar rankings desde CLI.
 
-## Estado actual del repositorio
+> Seguridad: este MVP es analítico. No ejecuta trades ni mueve fondos.
 
-- ✅ Documentación estratégica extensa (`ai-agent-economy-trader.MD`, `siaMD`).
-- ✅ Definición del esquema de base de datos completada como parte del diseño técnico del sistema.
-- ⚠️ No hay implementación Python funcional del `agent.py` dentro del repositorio actual.
-- ⚠️ No existe `requirements.txt` en la raíz (la instalación rápida previa asumía ese archivo).
+## Funcionalidad implementada
 
-> Recomendación: tratar este repo hoy como **spec/blueprint** y no como ejecutable listo para producción.
+- Cliente HTTP stdlib para `https://api.normies.art` con validación de IDs `0-9999`, timeout, backoff básico, throttling y cache local.
+- Ingesta de `metadata`, `traits`, `pixels`, `canvas/info`, `canvas/diff`, `owner` e intento de `history/stats`.
+- Persistencia local en SQLite mediante tabla `normies_signals`.
+- Scoring inicial:
+  - `rarity_score`: rareza inversa por frecuencia de traits dentro del rango escaneado.
+  - `visual_density_score`: densidad de pixeles sobre canvas 40x40.
+  - `canvas_activity_score`: personalización, nivel, action points y diff de pixeles.
+  - `holder_activity_score`: presencia de owner.
+  - `burn_momentum_score`: estadística global de burns cuando esté disponible.
+- CLI usable para scan, ranking y explicación.
+- Modo `--offline-demo` determinístico para demos y tests cuando la API no esté accesible desde el entorno.
 
-## Mejoras aplicadas en esta revisión
+## Instalación rápida
 
-1. **Corrección de expectativas**: se aclara el estado real del proyecto para evitar instrucciones de uso que fallen.
-2. **Roadmap técnico priorizado**: se propone una ruta de implementación incremental.
-3. **Checklist de calidad**: se añade un baseline de seguridad/operación antes de operar con fondos reales.
+Requiere Python 3.10+ y no necesita dependencias externas en runtime.
 
-## Roadmap sugerido (prioridad alta → baja)
+```bash
+python agent.py normies scan --start 0 --end 25 --offline-demo
+python agent.py normies top --limit 10
+python agent.py normies explain 0
+```
 
-### Fase 1 — Base ejecutable mínima
+Para usar la API real, omite `--offline-demo`:
 
-- Crear estructura Python:
-  - `agent.py` (entrypoint)
-  - `trading_agent/config.py`
-  - `trading_agent/data_feed.py`
-  - `trading_agent/strategy.py`
-  - `trading_agent/execution.py`
-  - `trading_agent/risk.py`
-- Añadir `requirements.txt` + `.env.example`.
-- Definir modo `paper/simulation` por defecto.
+```bash
+python agent.py normies scan --start 0 --end 25
+```
 
-### Fase 2 — Persistencia y observabilidad
+## Configuración
 
-- Integrar Supabase como fuente única de verdad (siguiendo el diseño ya documentado).
-- Estandarizar logs estructurados (`json`) con niveles (`INFO/WARN/ERROR`).
-- Añadir métricas mínimas: PnL, drawdown, win-rate, exposición por token.
+Copia `.env.example` si quieres documentar tus valores operativos y exporta las variables que necesites:
 
-### Fase 3 — Testing y seguridad operativa
+```bash
+export NORMIES_BASE_URL=https://api.normies.art
+export TRADING_AGENT_DB=data/trading_agent.sqlite3
+export NORMIES_CACHE_DIR=.cache/normies
+export NORMIES_TIMEOUT_SECONDS=10
+export NORMIES_REQUESTS_PER_MINUTE=55
+```
 
-- Pruebas unitarias para scoring, thresholds, circuit breakers y DRR.
-- Pruebas de integración en modo simulado.
-- Reglas de seguridad:
-  - límites por posición,
-  - límites por día,
-  - kill switch manual,
-  - validación de llaves/API por entorno.
+## Comandos CLI
 
-### Fase 4 — Entorno de producción
+### Escanear rango
 
-- Pipeline CI (lint + tests + type-check).
-- Backtesting reproducible con datasets versionados.
-- Deploy con scheduler y alertas (fallos de conexión, DRR activado, CB activo).
+```bash
+python agent.py normies scan --start 0 --end 9999
+```
 
-## Checklist mínimo antes de operar con dinero real
+Opciones útiles:
 
-- [ ] Estrategia validada en backtest y forward test.
-- [ ] Circuit breakers probados con escenarios extremos.
-- [ ] Gestión de riesgo configurada y revisada.
-- [ ] Modo simulación ejecutado de forma estable por varios ciclos.
-- [ ] Monitoreo y alertas operativos 24/7.
+- `--offline-demo`: genera datos determinísticos sin red.
+- `--db path/to/file.sqlite3`: usa otra base de datos.
+- `--no-cache`: fuerza nuevas llamadas HTTP.
 
-## Estructura documental actual
+### Ver top Normies
 
-- `ai-agent-economy-trader.MD`: arquitectura principal del trader, capas y reglas.
-- `siaMD`: especificación del Social Intelligence Agent (SIA).
-- `docs/normies-api-adaptation.md`: plan para adaptar el blueprint al hackathon y API de Normies.
+```bash
+python agent.py normies top --limit 25
+python agent.py normies top --limit 25 --json
+```
+
+### Explicar un ranking
+
+```bash
+python agent.py normies explain 123
+```
+
+## Estructura principal
+
+- `agent.py`: entrypoint CLI.
+- `trading_agent/config.py`: configuración por entorno.
+- `trading_agent/normies_client.py`: cliente HTTP y rate limiting.
+- `trading_agent/normies_ingest.py`: pipeline de ingesta y modo demo.
+- `trading_agent/normies_scoring.py`: scoring inicial.
+- `trading_agent/normies_repository.py`: persistencia SQLite.
+- `trading_agent/normies_cli.py`: comandos `scan`, `top` y `explain`.
+- `schema.sql`: esquema SQL incluyendo `normies_signals` para Supabase/Postgres.
+- `docs/normies-api-adaptation.md`: blueprint funcional original.
+
+## Roadmap siguiente
+
+- Añadir backtesting/rank history por snapshot.
+- Integrar Supabase como backend opcional además de SQLite.
+- Añadir dashboard web con cards e imagen SVG/PNG.
+- Incorporar SIA social sobre wallets, builders y narrativa Normies.
+- Endurecer validación contra schemas oficiales si la API publica OpenAPI.
 
 ## Licencia
 
