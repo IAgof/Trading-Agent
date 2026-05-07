@@ -424,3 +424,33 @@ LEFT JOIN ta_onchain_signals t ON b.token = t.token
 LEFT JOIN score_velocity sv ON b.token = sv.token
 LEFT JOIN quarantine q ON b.token = q.token AND q.cleared_at IS NULL
 LEFT JOIN blacklist bl ON b.token = bl.token;
+
+-- Normies Intelligence Agent MVP persistence.
+CREATE TABLE IF NOT EXISTS normies_signals (
+  token_id INT PRIMARY KEY CHECK (token_id BETWEEN 0 AND 9999),
+  owner_address TEXT,
+  type_trait TEXT,
+  gender_trait TEXT,
+  age_trait TEXT,
+  hair_trait TEXT,
+  facial_trait TEXT,
+  eyes_trait TEXT,
+  expression_trait TEXT,
+  accessory_trait TEXT,
+  pixel_count INT,
+  customized BOOLEAN,
+  level INT,
+  action_points INT,
+  added_pixels INT,
+  removed_pixels INT,
+  net_pixel_change INT,
+  rarity_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  visual_density_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  canvas_activity_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  holder_activity_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  burn_momentum_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  composite_score NUMERIC(6,4) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ok',
+  anomaly_flags JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
