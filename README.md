@@ -65,6 +65,7 @@
 
 - `ai-agent-economy-trader.MD`: arquitectura principal del trader, capas y reglas.
 - `siaMD`: especificación del Social Intelligence Agent (SIA).
+- `docs/normies-api-adaptation.md`: plan para adaptar el blueprint al hackathon y API de Normies.
 
 ## Licencia
 
